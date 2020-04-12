@@ -1,0 +1,138 @@
+
+# This script is used to analyze 2019 Lake Hamilton spring creel survey. This was a Roving-Access 
+# survey modeled after Chapter 15 of "Angler survey methods and their applications in fisheries management".
+
+library(dplyr) # various dplyr verbs
+library(lubridate) # For hour() function
+
+rm(list = ls(all = TRUE)) # Clear out working directory
+
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+##
+## Step 1: Import interview, catch, and pressure count data
+##
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+int <- read.csv("1_interviews.csv", na.strings = ".") # Read in interview data save as object "int"
+cat <- read.csv("2_catch.csv", na.strings = ".") # Read in catch data save as object "cat"
+pres <- read.csv("3_pressure count.csv", na.strings = ".") # Read in pressure data save as object "pres"
+
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+##
+## Step 2: Calculate Total Effort and Standard Error
+##         Probabilities (AM = .13, PM = .87), (Lower = .79, Upper = .21), (week = .30, weekend = .70) 
+##
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+count <- pres %>% # Calculate the total number of boat and bank anglers grouped by day and count
+  group_by(DATE, TIME, REGION, DAY.TYPE, COUNT) %>%  # Group by DATE, TIME, REGION, DAY.TYPE, and COUNT
+  summarise(boat = sum(BOAT, na.rm = T), # Sum the number of boat anglers by grouping variables
+            bank = sum(BANK, na.rm = T), # Sum the number of bank anglers by grouping variables
+            dive = sum(DIVE, na.rm = T)) # Sum the number of dive anglers by grouping variables
+
+count <- count %>% # Calculate the average number of anglers (boat, bank, dive) goruped by day
+  group_by(DATE, TIME, REGION, DAY.TYPE) %>% # Group by DATE, TIME, REGION, and DAY.TYPE
+  summarise(total = sum(boat, bank, dive) / 2) # Sum the total number of anglers (boat, bank, dive) by grouping variables
+
+count$TIME_prob <- ifelse(count$TIME == "AM", 0.13, 0.87) # Add selection probability for time of day
+count$REGION_prob <- ifelse(count$REGION == "LOWER", 0.79, 0.21) # Add selection probability for region
+count$day_type_prob <- ifelse(count$DAY.TYPE == "WEEKEND", 0.70, 0.30) # Add selection probability for day type
+
+count$laketotal <- count$total / (count$TIME_prob * count$REGION_prob * count$day_type_prob) # calculate the total effort grouped by day
+
+count$DATE <- as.Date(count$DATE, format = "%m/%d/%Y") # Convert "DATE" column to an actual date class
+
+toteffort <- count %>% # Manipulate dataframe "count" and save as object toteffort 
+  group_by(DAY.TYPE) %>% # group by DAY.TYPE
+  summarize(toteffort = mean(laketotal)) %>% # Sum the total estimated daily effort by DAY.TYPE
+  mutate(toteffort = ifelse(DAY.TYPE == "WEEKDAY", toteffort * 66, toteffort * 26)) %>% # Total effort grouped by day type (Hardcode 66 and 26 correspond to the number of week days (66) and Weekend days (26) in total sample period) 
+  summarize(toteffort = sum(toteffort)) # Total effort for full period
+
+stderr_effort <- count %>% # Manipulate dataframe "count" and save as object "stderr_effort"
+  group_by(DAY.TYPE) %>% # group by DAY.TYPE
+  mutate(s = (laketotal - mean(laketotal)) ^ 2) %>% 
+  mutate(s = ifelse(DAY.TYPE == "WEEKDAY", ((1/(7-1)) * sum(s)), ((1/(4-1)) * sum(s)))) %>% # Hardcode 7 and 4 correspond to the number of week days (7) and Weekend days (4) sampled
+  summarize(Var_e = mean(s)) %>%
+  mutate(Var_e = ifelse(DAY.TYPE == "WEEKDAY", Var_e/7, Var_e/4)) %>% # Hardcode 7 and 4 correspond to the number of week days (7) and Weekend days (4) sampled 
+  mutate(Var_E = ifelse(DAY.TYPE == "WEEKDAY", (66^2) * Var_e, (26^2) * Var_e)) %>% # Hardcode 66 and 26 correspond to the number of week days (66) and Weekend days (26) in total sample period 
+  mutate(SE_E = sqrt(Var_E)) %>% # Standard error grouped by day type
+  summarize(Var_E = sum(Var_E),  # Total sample period variance
+            SE_E = sqrt(sum(Var_E))) # Standard Error of effort for full period
+
+Effort <- cbind(toteffort, stderr_effort) # Combine estimate of total effort with standard error of full period
+Effort$rse <- (Effort$SE_E/Effort$toteffort) * 100 # Calculate the relative standard error
+
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+##
+## Step 3a: Calculate Total Interviewed Angler Hours Grouped by Date
+##
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+int <- int %>%
+  mutate(start = as.POSIXct(start, format = "%H:%M")) %>% # Convert start time to class "POSIXct" "POSIXt" (These data were entered using military time)
+  mutate(start = as.POSIXct(paste(ifelse(hour(start) < 5, hour(start) + 12, hour(start)), minute(start), sep = ":"), format = "%H:%M")) %>% # Convert end time to military time had to use "<5" because there were afternoon start times )
+  mutate(end = as.POSIXct(end, format = "%H:%M")) %>% # Convert end time to class "POSIXct" "POSIXt" (These data were NOT entered using military time)
+  mutate(end = as.POSIXct(paste(ifelse(hour(end) < 10, hour(end) + 12, hour(end)), minute(end), sep = ":"), format = "%H:%M")) %>% # Convert end time to military time. Had to use "<10" because there were moring end times (The earliest was 10:30)
+  mutate(party_effort = as.numeric(difftime(end, start)) * num_anglers) %>% # Calculate the total effort per angling party
+  group_by(date) %>%
+  summarize(tot_party_effort = sum(party_effort)) %>%
+  mutate(date = as.Date(date, format = "%m/%d/%Y"))
+
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+##
+## Step 3b: Calculate Total Catch Rate Grouped by Interview ID
+##
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+num_rel <- cat %>% # Number of fish released grouped by interview
+  group_by(interview_id, date) %>%
+  summarise(num_rel = sum(num_rel, na.rm = T))
+
+num_kept_measured <- cat[!is.na(cat$ln_kept),] %>% # Number of fish kept that were also measured grouped by interview
+  filter(ln_kept > 12) %>%
+  group_by(interview_id, date) %>%
+  count(interview_id)
+
+num_kept_notmeasured <- cat[!is.na(cat$ln_kept),] %>% # Number of fish kept that were NOT measured (Hapened if an angler caught a bunch of fish) grouped by interview
+  filter(ln_kept <= 12) %>%
+  group_by(interview_id, date) %>%
+  summarize(ln_kept = sum(ln_kept))
+
+catch <- num_rel %>% # Combine the number of fish released, kept/measured, kept/not measured grouped by interview_id and date
+  full_join(num_kept_measured, by = c("interview_id", "date")) %>%
+  full_join(num_kept_notmeasured, by = c("interview_id", "date")) %>%
+  group_by(date) %>%
+  summarise(totalcatch = sum(num_rel, n, ln_kept, na.rm = T)) %>%
+  mutate(date = as.Date(date, format = "%m/%d/%Y")) # Convert "date" column to an actual date class
+
+daily_catch_rate <- catch %>%
+  full_join(int, by = c("date")) %>% # Combine 
+  mutate(daily_catch_rate = totalcatch/tot_party_effort) %>%
+  left_join(count, by = c("date" = "DATE")) %>% # Combine the total catch by the total effort 
+  mutate(total_daily_catch = laketotal * daily_catch_rate) # Calculate the estimated total number of fish caught by day
+
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+##
+## Step 3b: Calculate Total Catch and Standard Error
+##
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+total_catch <- daily_catch_rate %>%
+  group_by(DAY.TYPE) %>%
+  summarize(total_catch = mean(total_daily_catch)) %>%
+  mutate(total_catch = ifelse(DAY.TYPE == "WEEKDAY", total_catch * 66, total_catch * 26)) %>% # Total effort grouped by day type (Hardcode 66 and 26 correspond to the number of week days (66) and Weekend days (26) in total sample period)
+  summarize(total_catch = sum(total_catch)) # Total effort for full period
+
+stderr_catch <- daily_catch_rate %>%
+  group_by(DAY.TYPE) %>%
+  mutate(s = (total_daily_catch - mean(total_daily_catch)) ^ 2) %>%
+  mutate(s = ifelse(DAY.TYPE == "WEEKDAY", ((1/(7-1)) * sum(s)), ((1/(4-1)) * sum(s)))) %>% # Hardcode 7 and 4 correspond to the number of week days (7) and Weekend days (4) sampled
+  summarize(Var_e = mean(s)) %>%
+  mutate(Var_e = ifelse(DAY.TYPE == "WEEKDAY", Var_e/7, Var_e/4)) %>% # Hardcode 7 and 4 correspond to the number of week days (7) and Weekend days (4) sampled 
+  mutate(Var_E = ifelse(DAY.TYPE == "WEEKDAY", (66^2) * Var_e, (26^2) * Var_e)) %>% # Hardcode 66 and 26 correspond to the number of week days (66) and Weekend days (26) in total sample period 
+  mutate(SE_E = sqrt(Var_E)) %>% # Standard error grouped by day type
+  summarize(Var_E = sum(Var_E),  # Total sample period variance
+            SE_E = sqrt(sum(Var_E))) # Standard Error of catch for full period
+
+Catch <- cbind(total_catch, stderr_catch) # Combine estimate of total catch with standard error of full period
+Catch$rse <- (Catch$SE_E/Catch$total_catch) * 100
