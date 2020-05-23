@@ -3,6 +3,6 @@
 The purpose of this repository is to store code used to conduct various fisheries management related analyses.
   
   * **Code/**
-    * **AGFC_analysis_code.R** -- Using RFishBC to collect incremental measurements on otoliths to calculate back-calculated lengths-at-age
+    * **2019_Ham_Creel.R** -- Code used to analyze a 2019 spring creel survey conducted on Lake Hamilton, Arkansas. 
 
  
