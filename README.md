@@ -2,7 +2,6 @@
 
 The purpose of this repository is to store code used to conduct various fisheries management related analyses.
   
-  * **Code/**
-    * **2019_Ham_Creel.R** -- Code used to analyze a 2019 spring creel survey conducted on Lake Hamilton, Arkansas. 
-
+* **2019_Ham_Creel.R** -- Code used to analyze a 2019 spring creel survey conducted on Lake Hamilton, Arkansas. 
+* **STB analysis app.R** --
  
