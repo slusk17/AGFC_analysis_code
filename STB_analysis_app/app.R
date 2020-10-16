@@ -21,19 +21,22 @@ ui = fluidPage(
     h5(HTML("The purpose of this application is to analyze data collected 
             during standardized gill netting for various Moronid species<br/><br/>")),
     h5(strong("Methods")),
-    h5(HTML("Gillnetting was used to sample the *Moronid species* population 
-            following the Preferred Method described in AGFC Striped Bass Species
-            Management Plan 2nd Edition. Sampling was conducted on *Dates* with 
-            *number of nets* experimental gillnets at *number of different locations* 
-            locations for a total effort of *number of net nights* net nights. All 
-            *Moronid species* were measured (TL, nearest mm) and weighed (g).<br/><br/>")),
+    h5(HTML("Gillnetting was used to sample the *Moronid species* population following the Preferred 
+            Method described in AGFC Striped Bass Species Management Plan 2nd Edition. Sampling was conducted 
+            on *Dates* with *number of nets* experimental gillnets at *number of different locations* locations 
+            for a total effort of *number of net nights* net nights (nn). All *Moronid species* were measured 
+            (TL, nearest mm) and weighed (g). <br/><br/> Sampling statistics [Catch per unit effort (CPUE)] 
+            and structural indices [Proportional Size Distribution-Quality (PSD-Q) and Proportional Size 
+            Distribution-Memorable (PSD-M)] were calculated for *Moronid species* according to Neumann et al. 
+            (2012). Relative standard error (RSE) was calculated for CPUE while standard error (SE) was 
+            calculated for PSD-M.<br/><br/>")),
     h5(strong("Results")),
     h5(HTML("A total of *number of target Morone species individuals collected* *Morone species* 
-            were collected via standardized sample for a mean catch per effort of *catch per 
-            net night* fish/nn [*relative standard error*; *sample size* (RSE; n)]. Collected 
-            *Morone species* ranged in size from *minimum size* to *maximum size* with an 
-            estimated PSD-M of *estimated PSD-M* [*standard error* (SE)] (*Reference size 
-            structure figure*).<br/><br/>")),
+            were collected via standardized sample for a mean catch per effort of *catch per net 
+            night* fish/nn [*relative standard error*; *sample size* (RSE; n)]. Collected *Morone species* 
+            ranged in size from *minimum size* to *maximum size* with an estimated PSD-Q of 
+            *estimated PSD-Q* [*standard error* (SE)] and PSD-M of *estimated PSD-M* [*standard error* (SE)] 
+            (*Figure X).<br/><br/>")),
     
     hr(),
     
