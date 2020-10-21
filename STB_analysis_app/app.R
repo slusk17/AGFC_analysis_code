@@ -70,42 +70,54 @@ server <- function(input, output) {
         
         dat$lcat25 <- lencat(dat$length, w = 25) # Create a new column "lcat25" that assigns all fish to a 25 mm length group
         
-        # Calculate PSD-M and associated 95% confidence intervals
+        # Calculate the catch per effort and associated RSE#
         
-        psd <- dat %>%
-            mutate(year = year(date)) %>% # create a new column with the year
-            filter(length >= psdVal("Striped Bass (landlocked)")["stock"]) %>% # select only STB greater than or equal to "stock" size
-            mutate(gcat = lencat(length, breaks = psdVal("Striped Bass (landlocked)"), # Create a column "gcat" and assign all individuals to a manegement category
-                                 use.name = TRUE, drop.levels = TRUE))
-        
-        psdm <- psd %>% 
-            group_by(year) %>%
-            summarize(memorable = (prop.table(xtabs(~gcat))*100)["memorable"]) # calculate the proportion of each category (PSD-X)
-        
-        psdmci <- psd %>%
-            group_by(year) %>%
-            summarize(psdci = round(psdCI(c(0,0,1), 
-                                          ptbl = (prop.table(xtabs(~gcat)) * 100), 
-                                          n = sum(xtabs(~gcat)), 
-                                          method = "binomial")[1] - psdCI(c(0,0,1), 
-                                                                          ptbl = (prop.table(xtabs(~gcat)) * 100), 
-                                                                          n = sum(xtabs(~gcat)), 
-                                                                          method = "binomial")[2]))
-        
-        psd <- left_join(psdmci, psdm) # Combine PSD-M and PSD confidence intervals
-        
-        # Calculate the catch per effort
-        
-        cpue <- dat %>% # Calculate the catch per effort by length group
+        cpue <- dat %>% # Calculate the catch per effort by length group for plotting
             group_by(date, net, lcat25) %>% # Group_by year, net and lcat25
             tally() %>% # Tally the number of fish 
             mutate(year = year(date)) %>% # create a new column with the year
             left_join(num_nets) %>% # Join the "num_nets" dataframe with the "dat" dataframe 
             mutate(cpue = n/num_nets) # Create a cpue column
         
+        estcpue <- dat %>% # Calculate the catch per effort by length group for plotting
+            mutate(year = year(date)) %>% # create a new column with the year
+            group_by(date, year, net) %>% # Group_by year, net and lcat25
+            tally() %>% # Tally the number of fish per net
+            group_by(year) %>% # Group by year
+            summarize(meancpue = mean(n), # Calculate the mean cpue
+                      SEcpue = sd(n, na.rm = T)/sqrt(sum(!is.na(n))), # Calculate the SE of CPUE
+                      rsecpue = (SEcpue / meancpue) * 100) # Calculate the RSE of CPUE
+        
+        # Calculate PSD-Q/PSD-M and associated SE #
+        
+        psd <- dat %>%
+            mutate(year = year(date)) %>% # create a new column with the year
+            filter(length >= psdVal("Striped Bass (landlocked)")["stock"]) %>% # select only STB greater than or equal to "stock" size
+            mutate(gcat = lencat(length, breaks = psdVal("Striped Bass (landlocked)"), # Create a column "gcat" and assign all individuals to a manegement category
+                                 use.name = TRUE, drop.levels = TRUE)) %>%
+            group_by(date, net, year) %>% # Group by date, net and year
+            summarize(s = (prop.table(xtabs(~gcat))*100)["stock"], # Calculate the proportion of "stock" fish
+                      q = (prop.table(xtabs(~gcat))*100)["quality"], # Calculate the proportion of "quality" fish
+                      p = (prop.table(xtabs(~gcat))*100)["preferred"], # Calculate the proportion of "preferred" fish
+                      m = (prop.table(xtabs(~gcat))*100)["memorable"], # Calculate the proportion of "memorable" fish
+                      t = (prop.table(xtabs(~gcat))*100)["trophy"]) %>% # Calculate the proportion of "trophy" fish
+            mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% # Convert "NA" values to 0 
+            group_by(date, net, year) %>% # Group_by date, net and year
+            summarize(psdq = (sum(q, p, m, t)/ sum(s, q, p, m, t)) * 100, # Calculate psdq
+                      psdm = (sum(m, t)/ sum(s, q, p, m, t)) * 100) %>% # Caluclate psdm
+            group_by(year) %>% # group by year
+            summarize(meanpsdq = mean(psdq), # calculate mean psdq
+                      SEpsdq = sd(psdq, na.rm = T)/sqrt(sum(!is.na(psdq))), # Calculate SE of psdq
+                      meanpsdm = mean(psdm), # Calculate mean psdm
+                      SEpsdm = sd(psdm, na.rm = T)/sqrt(sum(!is.na(psdm)))) # Calculate the SE of psdm
+        
         #=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=
         # Create standard time lapse size structure figure
         #=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=
+        
+        windows()
+        
+        #tiff("CPUE_figure.jpeg", width = 15, height = 15, units = "cm", res = 300)
         
         ggplot(data = cpue, aes(x = lcat25, y = cpue, group = year)) + # Create basic plot of number of fish per length group 
             stat_summary(fun.y = sum, geom = "bar", fill = "grey", colour = "black") + # Create basic plot of number of fish per length group
@@ -141,10 +153,29 @@ server <- function(input, output) {
                       fontface = "bold", 
                       size = 4) + # Size of labels
             
-            geom_text(data.frame(label = paste0("PSD-M", " ", "=", " ",as.character(round(psd$memorable)),"(",as.character(round(psd$psdci)),")"), # Add PSD text
+            geom_text(data.frame(label = paste0("CPUE", " ", "=", " ",as.character(round(estcpue$meancpue)),"(",as.character(round(estcpue$rsecpue)),")"), # Add PSD text
                                  year  = unique(psd$year),
                                  x     = max(dat$lcat25, na.rm = T) - 50,
                                  y     = max(cpue$cpue, na.rm = T) * 0.75),
+                      mapping = aes(x = x, y = y, label = label),
+                      family = "Times New Roman",
+                      fontface = "bold",
+                      size = 3) +
+            
+            
+            geom_text(data.frame(label = paste0("PSD-Q", " ", "=", " ",as.character(round(psd$meanpsdq)),"(",as.character(round(psd$SEpsdq)),")"), # Add PSD text
+                                 year  = unique(psd$year),
+                                 x     = max(dat$lcat25, na.rm = T) - 50,
+                                 y     = max(cpue$cpue, na.rm = T) * 0.55),
+                      mapping = aes(x = x, y = y, label = label),
+                      family = "Times New Roman",
+                      fontface = "bold",
+                      size = 3) +
+            
+            geom_text(data.frame(label = paste0("PSD-M", " ", "=", " ",as.character(round(psd$meanpsdm)),"(",as.character(round(psd$SEpsdm)),")"), # Add PSD text
+                                 year  = unique(psd$year),
+                                 x     = max(dat$lcat25, na.rm = T) - 50,
+                                 y     = max(cpue$cpue, na.rm = T) * 0.35),
                       mapping = aes(x = x, y = y, label = label),
                       family = "Times New Roman",
                       fontface = "bold",
@@ -154,6 +185,7 @@ server <- function(input, output) {
             
             xlab("Length (mm)") + # Add x axis label
             ylab("Mean Striped Bass/net night") # Add y axis label
+        
     })
 }
 
