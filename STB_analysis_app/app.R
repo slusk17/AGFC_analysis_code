@@ -115,8 +115,6 @@ server <- function(input, output) {
         # Create standard time lapse size structure figure
         #=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=
         
-        windows()
-        
         #tiff("CPUE_figure.jpeg", width = 15, height = 15, units = "cm", res = 300)
         
         ggplot(data = cpue, aes(x = lcat25, y = cpue, group = year)) + # Create basic plot of number of fish per length group 
