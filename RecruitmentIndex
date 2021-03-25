@@ -1,0 +1,59 @@
+#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=
+# Script used to estimate *Insert Lake* *Insert species*
+# Recruitment Index
+#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=#=~=
+
+library(dplyr) # mutate()
+library(FSA) # lencat()
+
+rm(list = ls(all = TRUE)) # Clear environment
+
+setwd("") # Set working directory where file is saved
+
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+## STEP 1 -- Import data/perform minor "wrangle"  
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+agesamp <- read.csv(" ", na.strings = ".") %>% # Import recruitment index length and age data
+  mutate(lcat25 = lencat(length, w = 25))
+
+lensamp <- read.csv(" ", na.strings = ".") %>% # Import field data
+  filter(Year == , specCode == ) %>% # Select just year = 2020 and species code = 193 (Largemouth Bass)
+  mutate(lcat25 = lencat(length, w = 25), # Assign each length to a "binsize" (w) (binsize = 25 mm)
+         age = as.numeric(age)) # Convert age column to a numeric
+  
+gear <- read.csv(" ") %>% # Import effort data
+  mutate(effort = effort/3600) %>% # Convert effort column to hours
+  filter(date == ) # Filter out just 2020 samples
+
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+## STEP 2 -- Select age/length sample and create an ALK
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+alk <- prop.table(xtabs(~lcat25+age,data=agesamp),margin=1) # Create age-length key
+
+ageassigned <- FSA::alkIndivAge(alk,age~length,data=lensamp) # Apply age-length key to assign ages to length sample
+
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+## STEP 3 -- Calculate Age-1 CPUE
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+catch <- ageassigned %>% # Manipulate dataframe "ageassigned" create new dataframe "catch"
+  group_by(UID, Year, specCode, age) %>% # Group by UID, Year, and specCode
+  summarise(caught = sum(count)) %>% # Sum the total number caught by UID, Year, and specCode
+  addZeroCatch("UID","age",zerovar = "caught") %>% # Add a 0 where there were no fish caught
+  left_join(gear, catch,by=c("UID", "Year" = "date")) %>% # Join "ageassigned" and "catch" by UID and year/date
+  mutate(cpe.hr = caught/effort) %>% # Calculate the catch per hour
+  filter(age == 1) # Filter out only age-1 fish
+
+cpeSum <- catch %>% # Create new dataframe "cpeSum
+  group_by(Year,specCode) %>%  # Group by year and specCode
+  summarise(samples = n(), # Count the number of samples (transects)
+            fish = sum(caught), # Sum the total number of fish caught 
+            mean = mean(cpe.hr), # Calculate the mean catch per hour
+            sd = sd(cpe.hr), # Calculate the standard deviation of catch per hour
+            se = sd/sqrt(samples), # Calculate the standard error of the number of transects
+            RSE = se/mean*100) %>% # Calculate the relative standard error of cpe
+  as.data.frame() # Convert to a dataframe
+
+cpeSum # Print dataframe "cpeSum"
